@@ -102,7 +102,6 @@ public class KSTokenView: UIView {
    private var _indicator = UIActivityIndicatorView(activityIndicatorStyle: UIActivityIndicatorViewStyle.Gray)
    private let _searchResultHeight: CGFloat = 200.0
    private var _lastSearchString: String = ""
-   private var _intrinsicContentHeight: CGFloat = UIViewNoIntrinsicMetric
    
    //MARK: - Public Properties
    //__________________________________________________________________________________
@@ -385,13 +384,12 @@ public class KSTokenView: UIView {
    
    private func _commonSetup() {
       backgroundColor = UIColor.clearColor()
-      clipsToBounds = true
       _tokenField = KSTokenField(frame: CGRect(x: 0, y: 0, width: self.bounds.width, height: self.bounds.height))
       _tokenField.textColor = UIColor.blackColor()
       _tokenField.enabled = true
       _tokenField.tokenFieldDelegate = self
       _tokenField.placeholder = ""
-      _tokenField.autoresizingMask = [.FlexibleWidth]
+      _tokenField.autoresizingMask = [.FlexibleWidth, .FlexibleHeight]
       _updateTokenField()
       addSubview(_tokenField)
       
@@ -405,9 +403,8 @@ public class KSTokenView: UIView {
       _searchTableView.delegate = self
       _searchTableView.dataSource = self
       
+      addSubview(_searchTableView)
       _hideSearchResults()
-      _intrinsicContentHeight = _tokenField.bounds.height
-      invalidateIntrinsicContentSize()
    }
    
    //MARK: - Layout changes
@@ -418,10 +415,6 @@ public class KSTokenView: UIView {
       _searchTableView.frame.size = CGSize(width: frame.width, height: searchResultSize.height)
    }
    
-    override public func intrinsicContentSize() -> CGSize {
-        return CGSize(width: UIViewNoIntrinsicMetric, height: _intrinsicContentHeight)
-    }
-    
    //MARK: - Private Methods
    //__________________________________________________________________________________
    //
@@ -713,32 +706,29 @@ public class KSTokenView: UIView {
       _showSearchResults()
    }
    
-    private func _showSearchResults() {
-        guard !_showingSearchResult else {return}
-        _showingSearchResult = true
-        addSubview(_searchTableView)
-        let tokenFieldHeight = _tokenField.frame.height
-        _searchTableView.hidden = false
-        _changeHeight(tokenFieldHeight)
-        delegate?.tokenViewDidShowSearchResults?(self)
-    }
+   private func _showSearchResults() {
+      if (_tokenField.isFirstResponder()) {
+         _showingSearchResult = true
+         addSubview(_searchTableView)
+         _searchTableView.frame.origin = CGPoint(x: 0, y: bounds.height)
+         _searchTableView.hidden = false
+      }
+      delegate?.tokenViewDidShowSearchResults?(self)
+   }
    
-    private func _hideSearchResults() {
-        guard _showingSearchResult else {return}
-        _showingSearchResult = false
-        let searchTableView = self._searchTableView
-        _changeHeight(_tokenField.frame.height) {
-            searchTableView.hidden = true
-            searchTableView.removeFromSuperview()
-        }
-        delegate?.tokenViewDidHideSearchResults?(self)
-    }
+   private func _hideSearchResults() {
+      _showingSearchResult = false
+      _searchTableView.hidden = true
+      _searchTableView.removeFromSuperview()
+      delegate?.tokenViewDidHideSearchResults?(self)
+   }
    
-    private func _repositionSearchResults(height: CGFloat) {
+   private func _repositionSearchResults() {
       if (!_showingSearchResult) {
          return
       }
-      _searchTableView.frame.origin = CGPoint(x: 0, y: height)
+      _searchTableView.frame.origin = CGPoint(x: 0, y: bounds.height)
+      _searchTableView.layoutIfNeeded()
    }
    
    private func _filteredSearchResults(results: Array <AnyObject>) -> Array <AnyObject> {
@@ -786,28 +776,21 @@ public class KSTokenView: UIView {
       _indicator.stopAnimating()
       _searchTableView.tableHeaderView = nil
    }
-    
-    private func _changeHeight(tokenFieldHeight: CGFloat, completion: (() -> Void)? = nil) {
-        let fullHeight = tokenFieldHeight + (_showingSearchResult ? _searchResultHeight : 0.0)
-        delegate?.tokenView?(self, willChangeFrameWithX: frame.origin.x, y: frame.origin.y, width: frame.size.width, height: fullHeight)
-        self._repositionSearchResults(tokenFieldHeight)
-        
-        UIView.animateWithDuration(
-            animateDuration,
-            animations: {
-                self._tokenField.frame.size.height = tokenFieldHeight
-                self.frame.size.height = fullHeight
-                self._intrinsicContentHeight = fullHeight
-                self.invalidateIntrinsicContentSize()
-                self.superview?.layoutIfNeeded()
-            },
-            completion: {completed in
-                completion?()
-                if (completed) {
-                    self.delegate?.tokenView?(self, didChangeFrameWithX: self.frame.origin.x, y: self.frame.origin.y, width: self.frame.size.width, height: fullHeight)
-                }
-        })
-    }
+   
+   //MARK: - HitTest for _searchTableView
+   //__________________________________________________________________________________
+   //
+   
+   override public func hitTest(point: CGPoint, withEvent event: UIEvent?) -> UIView? {
+      if (_showingSearchResult) {
+         let pointForTargetView = _searchTableView.convertPoint(point, fromView: self)
+         
+         if (CGRectContainsPoint(_searchTableView.bounds, pointForTargetView)) {
+            return _searchTableView.hitTest(pointForTargetView, withEvent: event)
+         }
+      }
+      return super.hitTest(point, withEvent: event)
+   }
    
    //MARK: - Memory Mangement
    //__________________________________________________________________________________
@@ -827,7 +810,33 @@ extension KSTokenView : KSTokenFieldDelegate {
    }
    
    func tokenFieldShouldChangeHeight(height: CGFloat) {
-      _changeHeight(height)
+      // Temporarily fixed issue of "command failed due to signal segmentation fault 11 CGRect"
+      delegate?.tokenView?(self, willChangeFrameWithX: frame.origin.x, y: frame.origin.y, width: frame.size.width, height: frame.size.height)
+      frame.size.height = height
+      
+      UIView.animateWithDuration(
+         animateDuration,
+         animations: {
+            self.frame.size.height = height
+            
+            if (KSUtils.constrainsEnabled(self)) {
+               for index in 0 ... self.constraints.count-1 {
+                  let constraint: NSLayoutConstraint = self.constraints[index] as NSLayoutConstraint
+                  
+                  if (constraint.firstItem as! NSObject == self && constraint.firstAttribute == .Height) {
+                     constraint.constant = height
+                  }
+               }
+            }
+            
+            self._repositionSearchResults()
+         },
+         completion: {completed in
+            if (completed) {
+               // Temporarily fixed issue of "command failed due to signal segmentation fault 11 CGRect"
+               self.delegate?.tokenView?(self, didChangeFrameWithX: self.frame.origin.x, y: self.frame.origin.y, width: self.frame.size.width, height: self.frame.size.height)
+            }
+      })
    }
 }
 

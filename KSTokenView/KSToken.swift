@@ -73,6 +73,9 @@ public class KSToken : UIControl {
 
    /// default is 200. Maximum width of token. After maximum limit is reached title is truncated at end with '...'
    private var _maxWidth: CGFloat? = 200
+    
+    
+    
    var maxWidth: CGFloat {
       get{
          return _maxWidth!
@@ -85,6 +88,9 @@ public class KSToken : UIControl {
          }
       }
    }
+    
+   public var icon: UIImage?
+   public var deleteIcon: Bool = false
    
    /// returns true if token is selected
    override public var selected: Bool {
@@ -165,10 +171,38 @@ public class KSToken : UIControl {
       let rectangleFontAttributes = [NSFontAttributeName: font, NSForegroundColorAttributeName: textColor, NSParagraphStyleAttributeName: rectangleStyle]
       
       let maxDrawableHeight = max(rect.height , font.lineHeight)
-      let textHeight: CGFloat = KSUtils.getRect(rectangleTextContent, width: rect.width, height: maxDrawableHeight , font: font).size.height
+    
+    let textHeight: CGFloat = KSUtils.getRect(rectangleTextContent, width: rect.width, height: maxDrawableHeight , font: font).size.height
+    var  paddingRight = paddingX
+    
+    if self.icon != nil {
+        let iconRect = CGRect(x: rect.minX + paddingX + 10, y: rect.minY + 5, width: 15, height: rect.height - 10)
+        self.icon?.drawInRect(iconRect)
+        paddingX += 20
+    }
+    
+    if self.deleteIcon {
+        
+        let crossWidth : CGFloat = 10.0
+        let crossRect = CGRect(x: rect.maxX - (paddingRight + crossWidth + 8), y: rect.minY +  (maxDrawableHeight - crossWidth)/2, width: crossWidth, height: crossWidth)
+        
+        var crossPath = UIBezierPath()
+        crossPath.moveToPoint(CGPointMake(crossRect.minX, crossRect.minY))
+        crossPath.addLineToPoint(CGPointMake(crossRect.maxX, crossRect.maxY))
+        crossPath.moveToPoint(CGPointMake(crossRect.minX, crossRect.maxY))
+        crossPath.addLineToPoint(CGPointMake(crossRect.maxX, crossRect.minY))
+        
+        
+        UIColor.whiteColor().setStroke()
+        crossPath.lineWidth = 2
+        crossPath.stroke()
+        paddingRight += crossWidth
+
+        
+    }
+    
       
-      
-      let textRect = CGRect(x: rect.minX + paddingX, y: rect.minY + (maxDrawableHeight - textHeight) / 2, width: min(maxWidth, rect.width) - (paddingX*2), height: maxDrawableHeight)
+      let textRect = CGRect(x: rect.minX + paddingX, y: rect.minY + (maxDrawableHeight - textHeight) / 2, width: min(maxWidth, rect.width) - (paddingX + paddingRight), height: maxDrawableHeight)
       
       rectangleTextContent.drawInRect(textRect, withAttributes: rectangleFontAttributes)
       
